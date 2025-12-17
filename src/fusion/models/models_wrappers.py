@@ -17,8 +17,8 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
 )
 
 
-from models.common import TransformerLayer, StatPoolLayer, AGenderClassificationHead
-from utils.common import AttrDict
+from common.models.common import TransformerLayer, StatPoolLayer, AGenderClassificationHead
+from common.utils.common import AttrDict
 
 
 class AudioWrapperModel(Wav2Vec2PreTrainedModel):

@@ -11,5 +11,8 @@ src/configs/*
 # models of spleeter
 pretrained_models/
 
-notebooks/other
-notebooks/*.csv
+/notebooks/
+/notebooks/other
+/notebooks/*.csv
+
+/models/

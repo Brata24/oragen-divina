@@ -58,6 +58,28 @@ class MAEMeasure(BaseMeasure):
         return res * 100
 
 
+class PCCMeasure(BaseMeasure): 
+    """PCC measure
+    """
+    def __init__(self, name: str = 'PCC',  mode=MeasureMode.MORE, protection: str = None) -> None:
+        super().__init__(name, mode, protection)
+    
+    def __call__(self, targets: list[np.ndarray] | np.ndarray, predicts: list[np.ndarray] | np.ndarray) -> float:
+        """Calculates Mean Absolute Error
+
+        Args:
+            targets (list[np.ndarray] | np.ndarray): Targets array
+            predicts (list[np.ndarray] | np.ndarray): Predicts array
+
+        Returns:
+            float: MAE value
+        """
+        targets = np.array(targets)
+        predicts = np.array(predicts)
+        res = np.corrcoef(targets, predicts)[0, 1]
+        return res
+
+
 class UARMeasure(BaseMeasure): 
     """UAR measure
     """
