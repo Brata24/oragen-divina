@@ -16,7 +16,10 @@ import torchvision
 
 from torch.utils.data import Dataset
 
-from configs.unimodal_config import data_config as conf
+try:
+    from configs.default_config import data_config as conf
+except ImportError:
+    pass
 
 from common.data.common import load_data, save_data, slice_audio, find_intersections, read_audio, generate_features_file_name, gender_label_to_int, mask_label_to_int, read_img, DatasetType
 from fusion.features.feature_extractors import AudioFeatureExtractor, VideoFeatureExtractor, FeaturesType
@@ -192,7 +195,7 @@ class AGenderMultimodalFeaturesDataset(Dataset):
             'counts': {
                 'gen': np.asarray([0 for i in range(0, gender_num_classes)]),
                 'age': 0,
-                'mask': np.asarray([0 for i in range(0, 6)]),
+                'mask': np.asarray([0 for i in range(0, max(self.mask_types) + 1)]),
             },
         }
         

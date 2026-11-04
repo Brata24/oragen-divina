@@ -374,7 +374,7 @@ class AVModelV3(nn.Module):
 
 
 class MaskAgenderAVModelV1(nn.Module):
-    def __init__(self, features_type, checkpoint_path=None):
+    def __init__(self, features_type, checkpoint_path=None, mask_num_classes=6):
         super(MaskAgenderAVModelV1, self).__init__()
         self.av_model = AVModelV3(features_type=features_type)
             
@@ -385,7 +385,7 @@ class MaskAgenderAVModelV1(nn.Module):
         for param in self.av_model.parameters():
             param.requires_grad = False
         
-        self.cl_maskhead = nn.Linear(256, 6)
+        self.cl_maskhead = nn.Linear(256, mask_num_classes)
 
     def forward(self, x):        
         x_gender, x_age = self.av_model.get_agender_features(x)
@@ -395,7 +395,7 @@ class MaskAgenderAVModelV1(nn.Module):
     
     
 class MaskAgenderAVModelV2(nn.Module):
-    def __init__(self, features_type, checkpoint_path=None):
+    def __init__(self, features_type, checkpoint_path=None, mask_num_classes=6):
         super(MaskAgenderAVModelV2, self).__init__()
         
         self.av_model = AVModelV3(features_type=features_type)
@@ -407,7 +407,7 @@ class MaskAgenderAVModelV2(nn.Module):
         for param in self.av_model.parameters():
             param.requires_grad = False
         
-        self.av_model.cl_head = MaskAGenderClassificationHead(256, output_size=3)
+        self.av_model.cl_head = MaskAGenderClassificationHead(256, output_size=3, mask_num_classes=mask_num_classes)
 
     def forward(self, x):
         x_gender, x_age = self.av_model.get_agender_features(x)
@@ -415,7 +415,11 @@ class MaskAgenderAVModelV2(nn.Module):
               
 
 class MaskAgenderAVModelV3(nn.Module):
-    def __init__(self, features_type, checkpoint_path=None):
+    """Trainable MTCMA fusion (2 blocks: mtcma_av, mtcma_va) + multitask head.
+    Audio (wav2vec2/HuBERT) and visual (ViT) extractors are not part of this module: their
+    features are pre-extracted by AGenderMultimodalFeaturesDataset, so they stay frozen.
+    """
+    def __init__(self, features_type, checkpoint_path=None, mask_num_classes=6):
         super(MaskAgenderAVModelV3, self).__init__()
         
         self.av_model = AVModelV3(features_type=features_type)
@@ -424,7 +428,7 @@ class MaskAgenderAVModelV3(nn.Module):
             checkpoint = torch.load(checkpoint_path)
             self.av_model.load_state_dict(checkpoint['model_state_dict'])
         
-        self.av_model.cl_head = MaskAGenderClassificationHead(256, output_size=3)
+        self.av_model.cl_head = MaskAGenderClassificationHead(256, output_size=3, mask_num_classes=mask_num_classes)
 
     def forward(self, x):
         x_gender, x_age = self.av_model.get_agender_features(x)

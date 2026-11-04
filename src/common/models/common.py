@@ -211,10 +211,11 @@ class AGenderClassificationHeadV2(nn.Module):
     
 class MaskAGenderClassificationHead(nn.Module):
     """AGenderClassificationHead"""
-    def __init__(self, input_size=256, output_size=3):
+    def __init__(self, input_size=256, output_size=3, mask_num_classes=6):
         super(MaskAGenderClassificationHead, self).__init__()
         self.fc_agender = nn.Linear(input_size, output_size)
-        self.fc_mask = nn.Linear(input_size, 6)
+        # 6 classes: BRAVE-MASKS baseline (Scenario A); 10 classes: BRAVE-MASKS + DIVINA (Scenario B)
+        self.fc_mask = nn.Linear(input_size, mask_num_classes)
 
     def forward(self, x):
         x_agender = self.fc_agender(x)

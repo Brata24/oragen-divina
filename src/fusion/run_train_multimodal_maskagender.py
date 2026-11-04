@@ -26,17 +26,24 @@ from fusion.features.common import FeaturesType
 from common.data.grouping import mask_grouping
 from common.data.common import define_context_length, DatasetType
 
-from fusion.models.multimodal_models import MaskAgenderAVModelV1, MaskAgenderAVModelV2, MaskAgenderAVModelV3, MaskAgenderAVModelV4
+from fusion.models.multimodal_models import MaskAgenderAVModelV1, MaskAgenderAVModelV2, MaskAgenderAVModelV3
 
 from fusion.augmentation.modality_augmentation import ModalityDropAugmentation
 
-from common.loss.loss import MaskAgenderLoss
+from common.loss.loss import MaskAgenderLoss, compute_inverse_frequency_weights
 
 from common.utils.accuracy import *
 
 from common.net_trainer.multitask_net_trainer import MultiTaskNetTrainer
 
 from common.utils.common import get_source_code, define_seed, AttrDict, wait_for_it
+
+
+# Experiment scenarios for occlusion (mask) type recognition
+SCENARIOS = {
+    'A': {'corpora': ['BRAVEMASKS'], 'mask_num_classes': 6},            # Baseline: NM, TM, MM, PM, PFS, R
+    'B': {'corpora': ['BRAVEMASKS', 'DIVINA'], 'mask_num_classes': 10}, # Extended: + HJ, HM, KA, TP
+}
   
 
 def main(d_config: dict, t_config: dict) -> None:
@@ -58,7 +65,13 @@ def main(d_config: dict, t_config: dict) -> None:
     """
     # Defining class names
     corpora_names = list(d_config.keys())
-    c_names = d_config[corpora_names[0]]['C_NAMES']
+    c_names = deepcopy(d_config[corpora_names[0]]['C_NAMES'])
+    
+    # Dynamic number of occlusion classes: 6 (Scenario A) or 10 (Scenario B)
+    mask_num_classes = t_config.get('MASK_NUM_CLASSES', 6)
+    mask_types = list(range(mask_num_classes))
+    c_names['mask'] = c_names['mask'][:mask_num_classes]
+    use_amp = t_config.get('USE_AMP', False)
 
     logs_root = t_config['LOGS_ROOT']
         
@@ -126,7 +139,7 @@ def main(d_config: dict, t_config: dict) -> None:
                                                                          gender_num_classes=len(c_names['gen']),
                                                                          features_type=features_type,
                                                                          channels=['c'],
-                                                                         mask_types=[0, 1, 2, 3, 4, 5],
+                                                                         mask_types=mask_types,
                                                                          vad_metadata=metadata_info[corpus_name][ds]['vad_metadata'],
                                                                          sr=sr, win_max_length=win_max_length, win_shift=win_shift, 
                                                                          win_min_length=win_min_length,
@@ -165,11 +178,13 @@ def main(d_config: dict, t_config: dict) -> None:
     
     define_seed(0)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    experiment_name = 'w-{4}MultiModalMaskAgender{3}-{0}-{1}-{2}'.format(len(c_names['gen']),
+    experiment_name = 'w-{4}MultiModalMaskAgender{3}-Scenario{5}-{6}cls-{0}-{1}-{2}'.format(len(c_names['gen']),
                                                           model_cls.__name__.replace('-', '_').replace('/', '_'),
                                                           datetime.datetime.now().strftime("%Y.%m.%d-%H.%M.%S"),
                                                           {1: 'Early', 2: 'Inter', 3: 'Late'}[int(features_type)], 
-                                                          'Augmentation' if augmentation else '')
+                                                          'Augmentation' if augmentation else '',
+                                                          t_config.get('SCENARIO', ''),
+                                                          mask_num_classes)
     
     # Defining NetTrainer 
     net_trainer = MultiTaskNetTrainer(log_root=logs_root,
@@ -180,28 +195,39 @@ def main(d_config: dict, t_config: dict) -> None:
                                       final_activations={'gen': nn.Softmax(dim=-1), 'age': nn.Sigmoid(), 'mask': nn.Softmax(dim=-1)},
                                       group_predicts_fn=mask_grouping,
                                       source_code=source_code,
-                                      c_names_to_display=c_names_to_display)
+                                      c_names_to_display=c_names_to_display,
+                                      use_amp=use_amp)
     
-    model = model_cls(features_type=features_type, checkpoint_path=model_args['checkpoint_path'])
+    # Audio (wav2vec2/HuBERT) and visual (ViT) extractors are frozen: their features are pre-extracted
+    # by AGenderMultimodalFeaturesDataset. Only the 2 MTCMA blocks + multitask heads are trained.
+    model = model_cls(features_type=features_type, checkpoint_path=model_args['checkpoint_path'], mask_num_classes=mask_num_classes)
     model.to(device)
     
-    # Defining weighted loss
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    print('Trainable parameters: {0} / {1}'.format(sum(p.numel() for p in trainable_params), 
+                                                   sum(p.numel() for p in model.parameters())))
+    
+    # Defining weighted loss: L_total = L_age (CCC) + L_gender (weighted CE) + L_occlusion_type (weighted CE)
+    # Class weights are inversely proportional to class frequency on the Train set
     gender_class_sample_count = [sum(x) for x in zip(*[datasets_stats[corpus_name]['train']['counts']['gen'] for corpus_name in corpora_names])]
     mask_class_sample_count = [sum(x) for x in zip(*[datasets_stats[corpus_name]['train']['counts']['mask'] for corpus_name in corpora_names])]
     loss = MaskAgenderLoss(
-        mask_weights=torch.Tensor(mask_class_sample_count / sum(mask_class_sample_count)).to(device),
-        gender_weights=torch.Tensor(gender_class_sample_count / sum(gender_class_sample_count)).to(device), 
+        mask_weights=compute_inverse_frequency_weights(mask_class_sample_count, device),
+        gender_weights=compute_inverse_frequency_weights(gender_class_sample_count, device), 
         gender_alpha=1, 
         age_alpha=1,
         mask_alpha=1,
     )
     
-    # Defining optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, betas=(0.9, 0.999), eps=1e-08)
+    # Defining optimizer (only trainable parameters)
+    optimizer_conf = t_config.get('OPTIMIZER', {'cls': 'AdamW', 'lr': 1e-5})
+    optimizer_cls = getattr(torch.optim, optimizer_conf['cls'])
+    optimizer = optimizer_cls(trainable_params, lr=optimizer_conf['lr'], betas=(0.9, 0.999), eps=1e-08)
 
     # Defining scheduler
+    scheduler_conf = t_config.get('SCHEDULER', {'T_0': 10, 'T_mult': 2})
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
-                                                                     T_0=10, T_mult=2)
+                                                                     T_0=scheduler_conf['T_0'], T_mult=scheduler_conf['T_mult'])
 
     model, max_perf = net_trainer.run(model=model, loss=loss, optimizer=optimizer, scheduler=scheduler,
                                       num_epochs=num_epochs, dataloaders=dataloaders, datasets_stats=datasets_stats, log_epochs=[i for i in range(0, 10)])
@@ -218,39 +244,47 @@ def main(d_config: dict, t_config: dict) -> None:
         print()
     
 
-def run_training() -> None:
+def run_training(scenarios: list[str] = ['A']) -> None:
     """Wrapper for training 
+
+    Args:
+        scenarios (list[str], optional): Scenarios to run: 'A' (BRAVE-MASKS, 6 classes) and/or 
+                                         'B' (BRAVE-MASKS + DIVINA, 10 classes). Defaults to ['A', 'B'].
     """
     d_config = dconf
     
     models = [
         # {'cls': MaskAgenderAVModelV1, 'checkpoint_path': 'w-AugmentationMultiModalFinalInter-2-AVModelV3-2024.10.18-08.34.16/models/epoch_1.pth'},
         # {'cls': MaskAgenderAVModelV2, 'checkpoint_path': 'w-AugmentationMultiModalFinalInter-2-AVModelV3-2024.10.18-08.34.16/models/epoch_1.pth'},
-        # {'cls': MaskAgenderAVModelV3, 'checkpoint_path': 'w-AugmentationMultiModalFinalInter-2-AVModelV3-2024.10.18-08.34.16/models/epoch_1.pth'},
-        {'cls': MaskAgenderAVModelV4, 'checkpoint_path': None},
+        # MaskAgenderAVModelV3: trainable MTCMA blocks on frozen (pre-extracted) audio/visual features.
+        # NOTE: upstream referenced a non-existent MaskAgenderAVModelV4.
+        {'cls': MaskAgenderAVModelV3, 'checkpoint_path': None},
     ]
 
     features_types = [FeaturesType.INTERMEDIATE]
     
-    for features_type in features_types:
-        for idx, model_info in enumerate(models):
-            corpora_names = ['VOXCELEB2', 'BRAVEMASKS']
-            # corpora_names = ['VOXCELEB2']
-            # corpora_names = ['BRAVEMASKS']
-            new_d_config = {corpus_name: d_config[corpus_name] for corpus_name in corpora_names}
-            
-            t_config = deepcopy(tconf)
-            t_config['FEATURE_EXTRACTOR']['FEATURES_TYPE'] = features_type
-
-            t_config['FEATURE_EXTRACTOR']['FEATURES_FILE_NAME'] = {1: 'EARLYF_SAMPLES', 2: 'INTERF_SAMPLES', 3: 'LATEF_SAMPLES'}[int(features_type)]
+    for scenario in scenarios:
+        for features_type in features_types:
+            for idx, model_info in enumerate(models):
+                corpora_names = SCENARIOS[scenario]['corpora']
+                new_d_config = {corpus_name: d_config[corpus_name] for corpus_name in corpora_names}
                 
-            t_config['MODEL']['cls'] = model_info['cls']
-            t_config['MODEL']['args'] = {'checkpoint_path': None}
-            # t_config['MODEL']['args'] = {'checkpoint_path': os.path.join('/media/maxim/WesternDigital/aGender2024/MultimodalNoMask', model_info['checkpoint_path'])}
-            t_config['AUGMENTATION'] = True
-            t_config['NUM_EPOCHS'] = 100
-            
-            main(d_config=new_d_config, t_config=t_config)
+                t_config = deepcopy(tconf)
+                t_config['SCENARIO'] = scenario
+                t_config['MASK_NUM_CLASSES'] = SCENARIOS[scenario]['mask_num_classes']
+                t_config['FEATURE_EXTRACTOR']['FEATURES_TYPE'] = features_type
+
+                t_config['FEATURE_EXTRACTOR']['FEATURES_FILE_NAME'] = {1: 'EARLYF_SAMPLES', 2: 'INTERF_SAMPLES', 3: 'LATEF_SAMPLES'}[int(features_type)]
+                    
+                t_config['MODEL']['cls'] = model_info['cls']
+                t_config['MODEL']['args'] = {'checkpoint_path': model_info['checkpoint_path']}
+                # t_config['MODEL']['args'] = {'checkpoint_path': os.path.join('/media/maxim/WesternDigital/aGender2024/MultimodalNoMask', model_info['checkpoint_path'])}
+                t_config['AUGMENTATION'] = True
+                t_config['NUM_EPOCHS'] = 100
+                t_config['BATCH_SIZE'] = 16
+                t_config['USE_AMP'] = t_config.get('USE_AMP', True)
+                
+                main(d_config=new_d_config, t_config=t_config)
 
 
 if __name__ == "__main__":

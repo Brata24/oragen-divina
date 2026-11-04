@@ -2,6 +2,7 @@ import sys
 
 sys.path.append('src')
 
+import os
 import pickle
 
 import torch
@@ -58,8 +59,10 @@ class AudioFeatureExtractor(BaseFeatureExtractor):
         self.model = AGenderAudioW2V2Model.from_pretrained(pretrained_model_name_or_path=model_name, 
                                            config=model_config)
         
-        checkpoint = torch.load('/media/maxim/WesternDigital/aGender2024/w-2-AGender_Audio_W2V2Model-2024.09.07-18.40.39/models/epoch_1.pth')
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        checkpoint_path = '/media/maxim/WesternDigital/aGender2024/w-2-AGender_Audio_W2V2Model-2024.09.07-18.40.39/models/epoch_1.pth'
+        if os.path.exists(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.to(self.device)
 
     def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
@@ -101,8 +104,10 @@ class VideoFeatureExtractor(BaseFeatureExtractor):
         self.processor = ViTDataPreprocessor()
         
         self.model = VIT_DPAL().to(self.device)
-        checkpoint = torch.load('/media/maxim/Programs/Projects/AGender/models/combined_vit_DPAL_weights.pth')
-        self.model.load_state_dict(checkpoint)
+        checkpoint_path = '/media/maxim/Programs/Projects/AGender/models/combined_vit_DPAL_weights.pth'
+        if os.path.exists(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint)
         self.model.to(self.device)
 
     def __call__(self, img_paths: list[str]) -> torch.Tensor:

@@ -8,7 +8,15 @@ from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except (ImportError, ModuleNotFoundError):
+    class SummaryWriter:
+        def __init__(self, *args, **kwargs): pass
+        def add_scalar(self, *args, **kwargs): pass
+        def add_scalars(self, *args, **kwargs): pass
+        def add_figure(self, *args, **kwargs): pass
+        def close(self): pass
 
 from common.visualization.visualize import conf_matrix, plot_conf_matrix
 from common.utils.common import create_logger
@@ -41,6 +49,8 @@ class MultiTaskNetTrainer:
                                                     Defaults to None.
             source_code (str, optional): Source code and configuration for logging. Defaults to None.
             c_names_to_display (list[str], optional): Class names to visualize confuson matrix. Defaults to None.
+            use_amp (bool, optional): Enables Mixed Precision Training (torch.cuda.amp). Only active on CUDA devices. 
+                                      Defaults to False.
         """
     def __init__(self, 
                  log_root: str, 
@@ -51,8 +61,13 @@ class MultiTaskNetTrainer:
                  final_activations: dict[torch.nn.Module],
                  group_predicts_fn: callable = None, 
                  source_code: str = None, 
-                 c_names_to_display: list[str] = None) -> None:
+                 c_names_to_display: list[str] = None,
+                 use_amp: bool = False) -> None:
         self.device = device
+        
+        # Mixed Precision Training (fp16 autocast + dynamic loss scaling), CUDA only
+        self.use_amp = use_amp and torch.cuda.is_available() and (torch.device(device).type == 'cuda')
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
         self.model = None
         self.loss = None
@@ -220,6 +235,7 @@ class MultiTaskNetTrainer:
                                     'model_state_dict': model.state_dict(),
                                     'optimizer_state_dict': optimizer.state_dict(),
                                     'loss': loss.state_dict(),
+                                    'scaler_state_dict': self.scaler.state_dict() if self.use_amp else None,
                                 }, os.path.join(self.logging_paths['model_path'], 'epoch_{0}.pth'.format(epoch)))
                     
                                 model.to(self.device)
@@ -361,14 +377,21 @@ class MultiTaskNetTrainer:
             # forward and backward
             preds = None
             with torch.set_grad_enabled('train' in phase):
-                preds = self.model(inps)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    preds = self.model(inps)
+                
+                # Loss is computed in float32 for numerical stability (CCC / weighted CE)
+                if self.use_amp:
+                    preds = {task: value.float() for task, value in preds.items()}
+                
                 if self.loss:
                     total_loss_value = self.loss(preds, labs)
 
                 # backward + optimize only if in training phase
                 if 'train' in phase and self.loss:
-                    total_loss_value.backward()
-                    self.optimizer.step()
+                    self.scaler.scale(total_loss_value).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
                     if self.scheduler:
                         self.scheduler.step(epoch + idx / iters)
 

@@ -2,6 +2,9 @@
 This is the script for extracting audio from video with/without filtering speech.
 """
 
+import sys
+sys.path.append('src')
+
 import os
 import pickle
 import pandas as pd
@@ -9,12 +12,15 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from configs.unimodal_bm_config import data_config
+try:
+    from configs.unimodal_bm_config import data_config
+except ImportError:
+    from configs.default_config import data_config
 
 
 model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                               model='silero_vad',
-                              force_reload=True,
+                              force_reload=False,
                               onnx=False)
 
 (get_speech_timestamps, _, read_audio, _, _) = utils
@@ -52,15 +58,24 @@ def run_vad(data_config: dict,
     data_df[keyword] = data_df[keyword].apply(lambda x: x.replace('.mp3', '.wav').replace('.m4a', '.wav'))
     
     res = {}
-    for a_file in tqdm(sorted(list(set(data_df[keyword].values)))):
-        if os.path.exists(os.path.join(data_config['PROCESSED_DATA_ROOT'], a_file)):
-            speech_timestamps = detect_speech(inp_path=os.path.join(data_config['PROCESSED_DATA_ROOT'], a_file))
+    audio_files = sorted(list(set(data_df[keyword].values)))
+    print(f"Total unique audio files to process for VAD: {len(audio_files)}")
+
+    for a_file in tqdm(audio_files):
+        full_path = os.path.join(data_config['PROCESSED_DATA_ROOT'], a_file)
+        if os.path.exists(full_path):
+            speech_timestamps = detect_speech(inp_path=full_path)
             res[a_file] = speech_timestamps
         else:
-            print('Error: ', os.path.join(data_config['PROCESSED_DATA_ROOT'], a_file))
+            print('Error, audio not found: ', full_path)
+
+    vad_output_dir = os.path.dirname(os.path.abspath(data_config['VAD_FILE_PATH']))
+    if vad_output_dir:
+        os.makedirs(vad_output_dir, exist_ok=True)
 
     with open(data_config['VAD_FILE_PATH'], 'wb') as handle:
         pickle.dump(res, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"VAD metadata successfully saved to: {data_config['VAD_FILE_PATH']}")
 
 
 if __name__ == "__main__":

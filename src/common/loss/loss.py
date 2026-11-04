@@ -3,6 +3,24 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 
+def compute_inverse_frequency_weights(class_counts, device: torch.device = None) -> torch.Tensor:
+    """Computes class weights inversely proportional to class frequency on the Train set:
+    w_c = N / (C * n_c). Classes with zero samples get weight 0 (avoid division by zero).
+
+    Args:
+        class_counts (list | np.ndarray | torch.Tensor): Number of train samples per class
+        device (torch.device, optional): Target device. Defaults to None.
+
+    Returns:
+        torch.Tensor: Class weights
+    """
+    counts = torch.as_tensor(class_counts, dtype=torch.float32)
+    num_classes = counts.numel()
+    total = counts.sum()
+    weights = torch.where(counts > 0, total / (num_classes * counts.clamp(min=1)), torch.zeros_like(counts))
+    return weights.to(device) if device is not None else weights
+
+
 class CCCLoss(nn.Module):
     """Lin's Concordance Correlation Coefficient: https://en.wikipedia.org/wiki/Concordance_correlation_coefficient
     Measures the agreement between two variables
@@ -80,10 +98,6 @@ class AGenderLoss(nn.Module):
         Returns:
             torch.Tensor: loss value
         """
-        # self.gender_loss_value = self.gender_loss(predicts['gen'], targets['gen'])
-        # self.age_loss_value = self.age_loss(F.sigmoid(predicts['age']), targets['age']) # get predicts
-        # return self.gender_alpha * self.gender_loss_value + self.age_alpha * self.age_loss_value
-    
         self.loss_values['gen'] = self.gender_loss(predicts['gen'], targets['gen'])
         self.loss_values['age'] = self.age_loss(F.sigmoid(predicts['age']), targets['age']) # get predicts
         
