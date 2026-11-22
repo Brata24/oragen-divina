@@ -116,6 +116,10 @@ class AGenderMultimodalFeaturesDataset(Dataset):
             sample_filename = sample['audio_file_path'].replace('.mp3', '.wav').replace('.m4a', '.wav')
             sample_fp = os.path.join(self.data_root, sample_filename)
             
+            # Skip if audio file is physically missing on disk
+            if not os.path.exists(sample_fp):
+                continue
+            
             image_info = re.split(r'__s\d{3}', sample['image_file_path'])
                       
             sample_gen = sample['gender']
@@ -156,7 +160,13 @@ class AGenderMultimodalFeaturesDataset(Dataset):
                         torchaudio.save('{1}_{0}.wav'.format(os.path.basename(sample_filename).split('.')[0], idx), wave.unsqueeze(0), self.sr)
                         print(image, int(window['start'] / self.sr) + 1, int(window['end'] / self.sr) + 1)                    
                 
-                features = {'acoustic_features': audio_feature_extractor(wave), 'visual_features': video_feature_extractor(images_fp)}
+                feature_target_path = os.path.join(self.full_features_path, 
+                                                   sample_filename.replace('.wav', '_{0}.dat'.format(w_idx)))
+                
+                # Resume support: only extract if not already cached
+                if not os.path.exists(feature_target_path):
+                    features = {'acoustic_features': audio_feature_extractor(wave), 'visual_features': video_feature_extractor(images_fp)}
+                    save_data(features, feature_target_path)
                 
                 self.info.append({
                     'fp': sample_fp,
@@ -171,9 +181,6 @@ class AGenderMultimodalFeaturesDataset(Dataset):
                     'mask': sample_mask,
                     'channel': sample['channel'] if 'channel' in sample else 'c',
                 })
-                
-                save_data(features, os.path.join(self.full_features_path, 
-                                                 sample_filename.replace('.wav', '_{0}.dat'.format(w_idx))))
 
     def filter_samples(self, info: list[dict], gender_num_classes: int) -> tuple[list[dict], dict]:
         """Filters samples according to number of gender classes and computes statistics for grouping of samples

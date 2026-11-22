@@ -98,6 +98,7 @@ def main(d_config: dict, t_config: dict) -> None:
     # Defining datasets 
     ds_names = {
         'train': 'train',
+        'devel': 'devel',
         'test': 'test',
     }
     
@@ -108,13 +109,22 @@ def main(d_config: dict, t_config: dict) -> None:
     # Defining metadata
     metadata_info = {}
     for corpus_name in corpora_names:
-        corpus_labels_metadata = pd.read_csv(d_config[corpus_name]['LABELS_FILE_PATH'])
+        corpus_labels_metadata = pd.read_csv(d_config[corpus_name]['LABELS_FILE_PATH'], low_memory=False)
         with open(d_config[corpus_name]['VAD_FILE_PATH'], 'rb') as handle:
             corpus_vad_metadata = pickle.load(handle)
         
+        has_devel = corpus_labels_metadata['subset'].isin(['devel', 'dev']).any()
         metadata_info[corpus_name] = {}
         for ds in ds_names:
-            condition_list = corpus_labels_metadata['subset'].isin(['train', 'devel', 'dev']) if 'train' in ds else corpus_labels_metadata['subset'].isin(['test'])
+            if 'train' in ds:
+                # For DIVINA (has_devel=True), keep 'devel' separate from 'train' to prevent data leakage
+                condition_list = corpus_labels_metadata['subset'].isin(['train']) if has_devel else corpus_labels_metadata['subset'].isin(['train', 'devel', 'dev'])
+            elif 'devel' in ds:
+                if not has_devel:
+                    continue
+                condition_list = corpus_labels_metadata['subset'].isin(['devel', 'dev'])
+            else:
+                condition_list = corpus_labels_metadata['subset'].isin(['test'])
 
             metadata_info[corpus_name][ds] = {
                 'data_root': d_config[corpus_name]['PROCESSED_DATA_ROOT'],
@@ -131,6 +141,8 @@ def main(d_config: dict, t_config: dict) -> None:
         datasets_stats[corpus_name] = {}
 
         for ds in ds_names:
+            if ds not in metadata_info[corpus_name]:
+                continue
             datasets[corpus_name][ds] = AGenderMultimodalFeaturesDataset(data_root=metadata_info[corpus_name][ds]['data_root'],
                                                                          labels_metadata=metadata_info[corpus_name][ds]['labels_metadata'], 
                                                                          features_root=features_root,
@@ -160,11 +172,13 @@ def main(d_config: dict, t_config: dict) -> None:
             )
         else:
             for corpus_name in corpora_names:
+                if ds not in datasets[corpus_name]:
+                    continue
                 dataloaders['{0}_{1}'.format(ds, corpus_name)] = torch.utils.data.DataLoader(
                     datasets[corpus_name][ds],
                     batch_size=batch_size,
                     shuffle=False,
-                    drop_last=True
+                    drop_last=False
                 )
         
     # Defining measures, measure with 0 index is main measure
@@ -230,7 +244,8 @@ def main(d_config: dict, t_config: dict) -> None:
                                                                      T_0=scheduler_conf['T_0'], T_mult=scheduler_conf['T_mult'])
 
     model, max_perf = net_trainer.run(model=model, loss=loss, optimizer=optimizer, scheduler=scheduler,
-                                      num_epochs=num_epochs, dataloaders=dataloaders, datasets_stats=datasets_stats, log_epochs=[i for i in range(0, 10)])
+                                      num_epochs=num_epochs, dataloaders=dataloaders, datasets_stats=datasets_stats, log_epochs=[i for i in range(0, 10)],
+                                      early_stopping=t_config.get('EARLY_STOPPING'))
 
     for phase, perf in max_perf.items():
         if 'train' in phase:
@@ -280,7 +295,7 @@ def run_training(scenarios: list[str] = ['A']) -> None:
                 t_config['MODEL']['args'] = {'checkpoint_path': model_info['checkpoint_path']}
                 # t_config['MODEL']['args'] = {'checkpoint_path': os.path.join('/media/maxim/WesternDigital/aGender2024/MultimodalNoMask', model_info['checkpoint_path'])}
                 t_config['AUGMENTATION'] = True
-                t_config['NUM_EPOCHS'] = 100
+                t_config['NUM_EPOCHS'] = t_config.get('NUM_EPOCHS', 500)
                 t_config['BATCH_SIZE'] = 16
                 t_config['USE_AMP'] = t_config.get('USE_AMP', True)
                 

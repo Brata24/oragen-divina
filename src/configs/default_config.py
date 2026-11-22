@@ -8,6 +8,7 @@ from common.data.data_preprocessors import BaseDataPreprocessor
 # Base directories
 BASE_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRAVEMASKS_RAW = r'C:\TA2\BRAVE-MASK\shared'
+DIVINA_PROCESSED = r'C:\TA2\Dataset\DIVINA_processed'
 
 data_config: dict = {
     'AGENDER': {
@@ -55,7 +56,19 @@ data_config: dict = {
         'LABELS_FILE_PATH': os.path.join(BASE_PROJECT_DIR, 'data', 'bravemasks_labels.csv'),
         'C_NAMES': {
             'gen': ['female', 'male'],
-            'mask': ['No mask', 'Tissue mask', 'Medical mask', 'Protective mask (ffp2/ffp3)', 'Respirator', 'Protective face shield'],
+            'mask': ['No mask', 'Tissue mask', 'Medical mask', 'Protective mask (ffp2/ffp3)',
+                     'Respirator', 'Protective face shield', 'Hijab', 'Helmet', 'Glasses', 'Hat'],
+        },
+    },
+    'DIVINA': {
+        'RAW_DATA_ROOT': DIVINA_PROCESSED,
+        'PROCESSED_DATA_ROOT': DIVINA_PROCESSED,
+        'VAD_FILE_PATH': os.path.join(BASE_PROJECT_DIR, 'data', 'divina_vad.pickle'),
+        'LABELS_FILE_PATH': os.path.join(BASE_PROJECT_DIR, 'data', 'divina_labels.csv'),
+        'C_NAMES': {
+            'gen': ['female', 'male'],
+            'mask': ['No mask', 'Tissue mask', 'Medical mask', 'Protective mask (ffp2/ffp3)',
+                     'Respirator', 'Protective face shield', 'Hijab', 'Helmet', 'Glasses', 'Hat'],
         },
     },
 }

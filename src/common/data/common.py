@@ -200,12 +200,16 @@ def gender_label_to_int(value: str, num_classes: int) -> int:
 
 def mask_label_to_int(value: str) -> int:
     """Convert mask value to label
-    No mask -> 0 class
-    Tissue mask -> 1 class
-    Medical mask -> 2 class
-    Protective mask (ffp2/ffp3) -> 3 class
-    Respirator -> 4 class
-    Protective face shield -> 5 class
+    0: No mask (BRAVE-MASKS & DIVINA polos)
+    1: Tissue mask
+    2: Medical mask
+    3: Protective mask (ffp2/ffp3)
+    4: Respirator
+    5: Protective face shield
+    6: Hijab (DIVINA)
+    7: Helmet (DIVINA)
+    8: Glasses (DIVINA)
+    9: Hat (DIVINA)
 
     Args:
         value (str): Mask label value
@@ -215,11 +219,22 @@ def mask_label_to_int(value: str) -> int:
     """
     return {
         'No mask': 0,
+        'polos': 0,
+        'none': 0,
         'Tissue mask': 1,
         'Medical mask': 2,
         'Protective mask (ffp2/ffp3)': 3,
         'Respirator': 4,
         'Protective face shield': 5,
+        'Hijab': 6,
+        'hijab': 6,
+        'kerudung': 6,
+        'Helmet': 7,
+        'helm': 7,
+        'Glasses': 8,
+        'kacamata': 8,
+        'Hat': 9,
+        'topi': 9,
     }[value]
     
     

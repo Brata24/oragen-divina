@@ -132,7 +132,8 @@ class MultiTaskNetTrainer:
             datasets_stats: dict[dict] = None, 
             log_epochs: list[int] = [], 
             fold_num: int = None, 
-            verbose: bool = True) -> None:
+            verbose: bool = True,
+            early_stopping: dict = None) -> None:
         """Iterates over epochs including the following steps:
         - Iterates over phases (train/devel/test phase):
             - Calls `iterate_model` function (as main loop for training/validation/testing)
@@ -184,9 +185,11 @@ class MultiTaskNetTrainer:
                 }
                 
         self.logger.info(self.exp_folder_name)
+        es_best, es_best_epoch, es_counter = None, 0, 0
         for epoch in range(1, num_epochs + 1):
             self.logger.info('Epoch {}/{}:'.format(epoch, num_epochs))
             d_epoch_stats = {'epoch': epoch}
+            es_values = []
             
             for phase, dataloader in dataloaders.items():
                 if 'test' in phase and dataloader is None:
@@ -201,6 +204,12 @@ class MultiTaskNetTrainer:
                     targets, predicts, sample_info = vs                     
                     
                     performance = self.calc_metrics(targets, predicts, sample_info, db)
+                    has_devel_phase = any('devel' in p for p in phases)
+                    if has_devel_phase:
+                        if ('devel' in phase) and (main_measure_name in performance):
+                            es_values.append(performance[main_measure_name])
+                    elif ('train' not in phase) and (main_measure_name in performance):
+                        es_values.append(performance[main_measure_name])
                                 
                     d_epoch_stats['{}_loss'.format(phase)] = epoch_loss
                     summary[phase].add_scalar('loss', epoch_loss, epoch)
@@ -252,6 +261,29 @@ class MultiTaskNetTrainer:
                                                 'logs', 
                                                 'stats.csv' if fold_num is None else 'fold_{0}.csv'.format(fold_num)),
                                    sep=';', index=False)
+
+            # EarlyStopping: pantau measure utama (measures[0]) pada fase evaluasi
+            if early_stopping and es_values:
+                es_mode = self.measures[0].mode
+                es_cur = float(np.mean(es_values))
+                es_delta = float(early_stopping.get('min_delta', 0.0))
+                es_patience = int(early_stopping.get('patience', 10))
+                if es_best is None:
+                    es_improved = True
+                elif es_mode == MeasureMode.LESS:
+                    es_improved = es_cur < es_best - es_delta
+                else:
+                    es_improved = es_cur > es_best + es_delta
+                if es_improved:
+                    es_best, es_best_epoch, es_counter = es_cur, epoch, 0
+                else:
+                    es_counter += 1
+                es_msg = 'EarlyStopping: {0}={1:.4f} | best={2:.4f} (epoch {3}) | counter {4}/{5}'.format(
+                    main_measure_name, es_cur, es_best, es_best_epoch, es_counter, es_patience)
+                self.logger.info(es_msg)
+                if es_counter >= es_patience:
+                    self.logger.info('Early stopping di epoch {0}. Epoch terbaik: {1}'.format(epoch, es_best_epoch))
+                    break
             
             self.logger.info('')
             

@@ -1,4 +1,4 @@
-import sys
+ import sys
 
 sys.path.append('src')
 
@@ -22,6 +22,9 @@ from common.utils.common import AttrDict
 
 
 class AudioWrapperModel(Wav2Vec2PreTrainedModel):
+    _tied_weights_keys = []
+    all_tied_weights_keys = {}
+
     def __init__(self, config):
         super().__init__(config)
         self.config = config
