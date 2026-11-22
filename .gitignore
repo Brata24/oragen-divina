@@ -3,6 +3,9 @@ __pycache__/
 .ipynb_checkpoints/
 agender_env
 /data/*
+!/data/divina_labels.csv
+!/data/divina_vad.pickle
+!/data/divina_preprocess_report.csv
 
 # You should make a copy of default_config.py
 src/configs/*

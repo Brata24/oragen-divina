@@ -303,4 +303,21 @@ def run_training(scenarios: list[str] = ['A']) -> None:
 
 
 if __name__ == "__main__":
-    run_training()
+    import argparse
+    parser = argparse.ArgumentParser(description="Pelatihan Model Multimodal ORAGEN (Skenario A & B)")
+    parser.add_argument('--scenario', default=None, choices=['A', 'B'],
+                        help="Skenario: 'A' (Baseline BRAVE-MASKS 6 kelas) atau 'B' (BRAVE-MASKS + DIVINA 10 kelas)")
+    parser.add_argument('--epochs', type=int, default=None, help="Override jumlah epoch")
+    parser.add_argument('--patience', type=int, default=None, help="Patience Early Stopping")
+    args = parser.parse_args()
+
+    active_scenario = args.scenario if args.scenario else tconf.get('SCENARIO', 'A')
+    if args.epochs:
+        tconf['NUM_EPOCHS'] = args.epochs
+    if args.patience:
+        if 'EARLY_STOPPING' not in tconf or not isinstance(tconf['EARLY_STOPPING'], dict):
+            tconf['EARLY_STOPPING'] = {'min_delta': 0.05}
+        tconf['EARLY_STOPPING']['patience'] = args.patience
+
+    print(f"=== Menjalankan Skenario: {active_scenario} ===")
+    run_training(scenarios=[active_scenario])

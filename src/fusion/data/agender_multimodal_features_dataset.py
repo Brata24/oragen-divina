@@ -111,7 +111,11 @@ class AGenderMultimodalFeaturesDataset(Dataset):
         audio_feature_extractor = AudioFeatureExtractor(features_type=self.features_type)
         video_feature_extractor = VideoFeatureExtractor(features_type=self.features_type)
 
-        self.labels_metadata = self.labels_metadata.sort_values('audio_file_path').drop_duplicates(['audio_file_path'], keep='last').copy()
+        dedup_cols = ['audio_file_path', 'augmentation'] if 'augmentation' in self.labels_metadata.columns else ['audio_file_path']
+        self.labels_metadata = self.labels_metadata.sort_values(dedup_cols).drop_duplicates(dedup_cols, keep='last').copy()
+        _last_base_clip = None
+        _audio_cache = {}
+        _video_cache = {}
         for sample in tqdm(self.labels_metadata.to_dict('records')):
             sample_filename = sample['audio_file_path'].replace('.mp3', '.wav').replace('.m4a', '.wav')
             sample_fp = os.path.join(self.data_root, sample_filename)
@@ -119,6 +123,18 @@ class AGenderMultimodalFeaturesDataset(Dataset):
             # Skip if audio file is physically missing on disk
             if not os.path.exists(sample_fp):
                 continue
+
+            aug_tag = str(sample.get('augmentation', 'orig') or 'orig')
+            if aug_tag in ('', 'orig', 'nan', 'None') or ('__' + aug_tag + '.wav') in sample_filename:
+                sample_key = sample_filename
+            else:
+                sample_key = sample_filename.replace('.wav', '__{0}.wav'.format(aug_tag))
+
+            base_clip = re.sub(r'__aug\d+\.wav$', '.wav', sample_filename)
+            if base_clip != _last_base_clip:
+                _last_base_clip = base_clip
+                _audio_cache.clear()
+                _video_cache.clear()
             
             image_info = re.split(r'__s\d{3}', sample['image_file_path'])
                       
@@ -161,16 +177,22 @@ class AGenderMultimodalFeaturesDataset(Dataset):
                         print(image, int(window['start'] / self.sr) + 1, int(window['end'] / self.sr) + 1)                    
                 
                 feature_target_path = os.path.join(self.full_features_path, 
-                                                   sample_filename.replace('.wav', '_{0}.dat'.format(w_idx)))
+                                                   sample_key.replace('.wav', '_{0}.dat'.format(w_idx)))
                 
                 # Resume support: only extract if not already cached
                 if not os.path.exists(feature_target_path):
-                    features = {'acoustic_features': audio_feature_extractor(wave), 'visual_features': video_feature_extractor(images_fp)}
+                    a_cache_key = (sample_fp, window['start'], window['end'])
+                    v_cache_key = tuple(images_fp)
+                    if a_cache_key not in _audio_cache:
+                        _audio_cache[a_cache_key] = audio_feature_extractor(wave)
+                    if v_cache_key not in _video_cache:
+                        _video_cache[v_cache_key] = video_feature_extractor(images_fp)
+                    features = {'acoustic_features': _audio_cache[a_cache_key], 'visual_features': _video_cache[v_cache_key]}
                     save_data(features, feature_target_path)
                 
                 self.info.append({
                     'fp': sample_fp,
-                    'fn': sample_filename,
+                    'fn': sample_key,
                     'img_fp': images_fp,
                     'img_fn': images_fn,
                     'w_idx': w_idx,
