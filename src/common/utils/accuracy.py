@@ -98,7 +98,8 @@ class UARMeasure(BaseMeasure):
         """
         targets = np.array(targets).astype(int)
         predicts = np.array(predicts).astype(int)
-        res = metrics.recall_score(targets, predicts, average='macro')
+        present_labels = np.unique(targets)
+        res = metrics.recall_score(targets, predicts, labels=present_labels, average='macro', zero_division=0)
         return res * 100
 
 
@@ -120,7 +121,8 @@ class MacroF1Measure(BaseMeasure):
         """
         targets = np.array(targets).astype(int)
         predicts = np.array(predicts).astype(int)
-        res = metrics.f1_score(targets, predicts, average='macro')
+        present_labels = np.unique(targets)
+        res = metrics.f1_score(targets, predicts, labels=present_labels, average='macro', zero_division=0)
         return res * 100
 
 
@@ -142,7 +144,8 @@ class PrecisionMeasure(BaseMeasure):
         """
         targets = np.array(targets).astype(int)
         predicts = np.array(predicts).astype(int)
-        res = metrics.precision_score(targets, predicts, average='macro')
+        present_labels = np.unique(targets)
+        res = metrics.precision_score(targets, predicts, labels=present_labels, average='macro', zero_division=0)
         return res * 100
     
 
