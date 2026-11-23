@@ -16,8 +16,12 @@ import torch.nn as nn
 from torchvision import transforms
 from transformers import AutoConfig
 
-from configs.multimodal_bm_config import data_config as dconf
-from configs.multimodal_bm_config import training_config as tconf
+try:
+    from configs.multimodal_bm_config import data_config as dconf
+    from configs.multimodal_bm_config import training_config as tconf
+except ModuleNotFoundError:
+    from configs.default_config import data_config as dconf
+    from configs.default_config import training_config as tconf
 
 from fusion.data.agender_multimodal_features_dataset import AGenderMultimodalFeaturesDataset
 

@@ -29,8 +29,12 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from configs.multimodal_bm_config import data_config as dconf
-from configs.multimodal_bm_config import training_config as tconf
+try:
+    from configs.multimodal_bm_config import data_config as dconf
+    from configs.multimodal_bm_config import training_config as tconf
+except ModuleNotFoundError:
+    from configs.default_config import data_config as dconf
+    from configs.default_config import training_config as tconf
 
 from fusion.data.agender_multimodal_features_dataset import AGenderMultimodalFeaturesDataset
 from fusion.features.common import FeaturesType
@@ -246,6 +250,9 @@ def evaluate_scenario(scenario: str, checkpoint_path: str = None, subset: str = 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     d_config = ensure_configs(deepcopy(dconf))
     t_config = deepcopy(tconf)
+    if os.path.exists('/content/drive/MyDrive/DIVINA_ORAGEN'):
+        t_config['LOGS_ROOT'] = '/content/drive/MyDrive/DIVINA_ORAGEN/logs'
+        t_config['FEATURE_EXTRACTOR']['FEATURES_ROOT'] = '/content/drive/MyDrive/DIVINA_ORAGEN/features'
     logs_root = t_config['LOGS_ROOT']
     if fig_dir is None:
         fig_dir = os.path.join(os.path.dirname(logs_root), 'figures')

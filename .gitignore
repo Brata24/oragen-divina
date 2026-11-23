@@ -7,9 +7,8 @@ agender_env
 !/data/divina_vad.pickle
 !/data/divina_preprocess_report.csv
 
-# You should make a copy of default_config.py
-src/configs/*
-!src/configs/default_config.py
+# Track all config files so Colab has them out-of-the-box
+!src/configs/*.py
 
 # models of spleeter
 pretrained_models/

@@ -5,10 +5,21 @@ sys.path.append('src')
 
 from common.data.data_preprocessors import BaseDataPreprocessor
 
-# Base directories
+# Base directories (auto-detect Google Colab vs Local Windows)
 BASE_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BRAVEMASKS_RAW = r'C:\TA2\BRAVE-MASK\shared'
-DIVINA_PROCESSED = r'C:\TA2\Dataset\DIVINA_processed'
+IS_COLAB = os.path.exists('/content')
+DRIVE_ROOT = '/content/drive/MyDrive/DIVINA_ORAGEN'
+
+if IS_COLAB:
+    BRAVEMASKS_RAW = '/content/dataset/shared'
+    DIVINA_PROCESSED = '/content/dataset/divina'
+    DEFAULT_LOGS_ROOT = f'{DRIVE_ROOT}/logs' if os.path.exists('/content/drive') else os.path.join(BASE_PROJECT_DIR, 'logs')
+    DEFAULT_FEATURES_ROOT = f'{DRIVE_ROOT}/features' if os.path.exists('/content/drive') else os.path.join(BASE_PROJECT_DIR, 'data', 'features')
+else:
+    BRAVEMASKS_RAW = r'C:\TA2\BRAVE-MASK\shared'
+    DIVINA_PROCESSED = r'C:\TA2\Dataset\DIVINA_processed'
+    DEFAULT_LOGS_ROOT = os.path.join(BASE_PROJECT_DIR, 'logs')
+    DEFAULT_FEATURES_ROOT = os.path.join(BASE_PROJECT_DIR, 'data', 'features')
 
 data_config: dict = {
     'AGENDER': {
@@ -74,22 +85,23 @@ data_config: dict = {
 }
 
 training_config: dict = {
-    'LOGS_ROOT': os.path.join(BASE_PROJECT_DIR, 'logs'),
+    'LOGS_ROOT': DEFAULT_LOGS_ROOT,
     'MODEL': {
         'cls': None,
         'args': { 
         }
     },
     'FEATURE_EXTRACTOR': {
-        'FEATURES_ROOT': os.path.join(BASE_PROJECT_DIR, 'data', 'features'),
+        'FEATURES_ROOT': DEFAULT_FEATURES_ROOT,
         'FEATURES_FILE_NAME': 'SAMPLES',
         'WIN_MAX_LENGTH': 4,
         'WIN_SHIFT': 2,
         'WIN_MIN_LENGTH': 1,
         'SR': 16000,
     },
-    'NUM_EPOCHS': 100,
+    'NUM_EPOCHS': 500,
     'BATCH_SIZE': 16,
+    'EARLY_STOPPING': {'patience': 20, 'min_delta': 0.05},
     'OPTIMIZER': {'cls': 'AdamW', 'lr': 1e-4},
     'SCHEDULER': {'cls': 'CosineAnnealingWarmRestarts', 'T_0': 10, 'T_mult': 2},
     'AUGMENTATION': True,
