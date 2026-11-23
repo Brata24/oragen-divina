@@ -49,6 +49,78 @@ OCC_CODE_TO_NAME = {
 }
 
 
+def ensure_configs(d_config: dict) -> dict:
+    """Pastikan entri DIVINA dan BRAVEMASKS selalu ada dan path-nya valid di sistem lokal maupun Colab."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if 'DIVINA' not in d_config:
+        d_config['DIVINA'] = {}
+    div_cfg = d_config['DIVINA']
+    if not div_cfg.get('PROCESSED_DATA_ROOT') or not os.path.exists(div_cfg['PROCESSED_DATA_ROOT']):
+        cands = [
+            '/content/dataset/divina',
+            '/content/dataset/DIVINA',
+            '/content/DIVINA',
+            '/content/drive/MyDrive/DIVINA_ORAGEN/DIVINA',
+            os.path.join(base_dir, '..', '..', 'Dataset', 'DIVINA_processed'),
+            r'C:\TA2\Dataset\DIVINA_processed',
+        ]
+        div_root = next((c for c in cands if os.path.exists(c)), '/content/dataset/divina')
+        div_cfg['RAW_DATA_ROOT'] = div_root
+        div_cfg['PROCESSED_DATA_ROOT'] = div_root
+    if not div_cfg.get('LABELS_FILE_PATH') or not os.path.exists(div_cfg['LABELS_FILE_PATH']):
+        lbls = [
+            os.path.join(base_dir, 'data', 'divina_labels.csv'),
+            '/content/ORAGEN/data/divina_labels.csv',
+            '/content/drive/MyDrive/DIVINA_ORAGEN/data/divina_labels.csv',
+            'data/divina_labels.csv',
+        ]
+        div_cfg['LABELS_FILE_PATH'] = next((l for l in lbls if os.path.exists(l)), lbls[0])
+    if not div_cfg.get('VAD_FILE_PATH') or not os.path.exists(div_cfg['VAD_FILE_PATH']):
+        vads = [
+            os.path.join(base_dir, 'data', 'divina_vad.pickle'),
+            '/content/ORAGEN/data/divina_vad.pickle',
+            '/content/drive/MyDrive/DIVINA_ORAGEN/data/divina_vad.pickle',
+            'data/divina_vad.pickle',
+        ]
+        div_cfg['VAD_FILE_PATH'] = next((v for v in vads if os.path.exists(v)), vads[0])
+    if 'C_NAMES' not in div_cfg:
+        div_cfg['C_NAMES'] = {
+            'gen': ['female', 'male'],
+            'mask': ['No mask', 'Tissue mask', 'Medical mask', 'Protective mask (ffp2/ffp3)',
+                     'Respirator', 'Protective face shield', 'Hijab', 'Helmet', 'Glasses', 'Hat'],
+        }
+
+    if 'BRAVEMASKS' not in d_config:
+        d_config['BRAVEMASKS'] = {}
+    bm_cfg = d_config['BRAVEMASKS']
+    if not bm_cfg.get('PROCESSED_DATA_ROOT') or not os.path.exists(bm_cfg['PROCESSED_DATA_ROOT']):
+        cands_bm = ['/content/dataset/shared', r'C:\TA2\BRAVE-MASK\shared']
+        bm_root = next((c for c in cands_bm if os.path.exists(c)), '/content/dataset/shared')
+        bm_cfg['RAW_DATA_ROOT'] = bm_root
+        bm_cfg['PROCESSED_DATA_ROOT'] = bm_root
+    if not bm_cfg.get('LABELS_FILE_PATH') or not os.path.exists(bm_cfg['LABELS_FILE_PATH']):
+        lbls_bm = [
+            os.path.join(base_dir, 'data', 'bravemasks_labels.csv'),
+            '/content/ORAGEN/data/bravemasks_labels.csv',
+            'data/bravemasks_labels.csv',
+        ]
+        bm_cfg['LABELS_FILE_PATH'] = next((l for l in lbls_bm if os.path.exists(l)), lbls_bm[0])
+    if not bm_cfg.get('VAD_FILE_PATH') or not os.path.exists(bm_cfg['VAD_FILE_PATH']):
+        vads_bm = [
+            os.path.join(base_dir, 'data', 'bravemasks_vad.pickle'),
+            '/content/ORAGEN/data/bravemasks_vad.pickle',
+            'data/bravemasks_vad.pickle',
+        ]
+        bm_cfg['VAD_FILE_PATH'] = next((v for v in vads_bm if os.path.exists(v)), vads_bm[0])
+    if 'C_NAMES' not in bm_cfg:
+        bm_cfg['C_NAMES'] = {
+            'gen': ['female', 'male'],
+            'mask': ['No mask', 'Tissue mask', 'Medical mask', 'Protective mask (ffp2/ffp3)',
+                     'Respirator', 'Protective face shield', 'Hijab', 'Helmet', 'Glasses', 'Hat'],
+        }
+    return d_config
+
+
 def find_best_checkpoint(logs_root: str, scenario: str = 'A') -> tuple[str, int]:
     """Cari checkpoint (.pth) pada epoch terbaik (MAE evaluasi terendah) untuk skenario A atau B."""
     tag = f'Scenario{scenario}'
@@ -172,7 +244,7 @@ def compute_metrics(t_dict: dict, p_dict: dict, eval_mask: bool = True) -> dict:
 def evaluate_scenario(scenario: str, checkpoint_path: str = None, subset: str = 'test',
                       fig_dir: str = None) -> dict:
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    d_config = deepcopy(dconf)
+    d_config = ensure_configs(deepcopy(dconf))
     t_config = deepcopy(tconf)
     logs_root = t_config['LOGS_ROOT']
     if fig_dir is None:
@@ -231,7 +303,6 @@ def evaluate_scenario(scenario: str, checkpoint_path: str = None, subset: str = 
             print(f"    - Pengenalan Oklusi (mask_UAR): {bm_metrics['mask_UAR']:.2f} %")
 
     # 1) Evaluasi pada Test DIVINA
-    assert 'DIVINA' in d_config, "Konfigurasi 'DIVINA' belum ada di default_config.py"
     ds_divina = load_corpus_dataset('DIVINA', subset, d_config, t_config)
     t_div, p_div, fns_div = infer_grouped(model, ds_divina, device, t_config.get('BATCH_SIZE', 16), modality='both')
 

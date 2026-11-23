@@ -37,6 +37,7 @@ from common.utils.accuracy import *
 from common.net_trainer.multitask_net_trainer import MultiTaskNetTrainer
 
 from common.utils.common import get_source_code, define_seed, AttrDict, wait_for_it
+from fusion.run_eval_zeroshot_divina import ensure_configs
 
 
 # Experiment scenarios for occlusion (mask) type recognition
@@ -266,7 +267,7 @@ def run_training(scenarios: list[str] = ['A']) -> None:
         scenarios (list[str], optional): Scenarios to run: 'A' (BRAVE-MASKS, 6 classes) and/or 
                                          'B' (BRAVE-MASKS + DIVINA, 10 classes). Defaults to ['A', 'B'].
     """
-    d_config = dconf
+    d_config = ensure_configs(deepcopy(dconf))
     
     models = [
         # {'cls': MaskAgenderAVModelV1, 'checkpoint_path': 'w-AugmentationMultiModalFinalInter-2-AVModelV3-2024.10.18-08.34.16/models/epoch_1.pth'},
